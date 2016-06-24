@@ -10,7 +10,6 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.DatePicker;
@@ -20,16 +19,15 @@ import android.widget.TimePicker;
 import android.widget.Toast;
 
 import java.util.Calendar;
-import java.util.Date;
 import java.util.List;
 
-import br.poc.agendacompromisso.util.AndroidUtil;
-import br.poc.agendacompromisso.util.ConstantesAgenda;
 import br.poc.agendacompromisso.R;
 import br.poc.agendacompromisso.async.InterfaceAsyncTask;
 import br.poc.agendacompromisso.entidade.Compromisso;
 import br.poc.agendacompromisso.regras.RegraCompromissoAsyncTask;
 import br.poc.agendacompromisso.services.ReceiverAlarme;
+import br.poc.agendacompromisso.util.AndroidUtil;
+import br.poc.agendacompromisso.util.ConstantesAgenda;
 
 /**
  * A placeholder fragment containing a simple view.
@@ -38,7 +36,7 @@ public class AddCompromissoActivity extends AppCompatActivity implements Interfa
 
     // AsyncTask
     private RegraCompromissoAsyncTask addCompromissoAsyncTask;
-    private br.poc.agenda.backend.acompanhamentoEndpoint.model.Compromisso compromissoModel;
+    private br.poc.agenda.backend.acompanhamentoEndpoint.model.Compromisso modelCompro;
     // Componentes
     private Button salvar;
     private TextView data;
@@ -49,6 +47,7 @@ public class AddCompromissoActivity extends AppCompatActivity implements Interfa
     private EditText descricao;
     private ProgressDialog progressDialog;
     private boolean isEdicao;
+    private String compromissoId;
 
     // Objeto
     private Compromisso compromisso;
@@ -63,20 +62,18 @@ public class AddCompromissoActivity extends AppCompatActivity implements Interfa
         init();
 
         if(getIntent().getSerializableExtra(ConstantesAgenda.ID) != null){
+            isEdicao = true;
             initPutExtra();
         }
     }
 
     private void initPutExtra() {
-        compromissoModel = getIntent().getSerializableExtra(ConstantesAgenda.ID);
+        compromissoId = getIntent().getStringExtra(ConstantesAgenda.ID);
 
-        if(compromisso != null){
-            titulo.setText(compromisso.getTitulo());
-            data.setText(compromisso.getData().split(" ")[0]);
-            hora.setText(compromisso.getData().split(" ")[1]);
-            descricao.setText(compromisso.getDescricao());
-        }
+        addCompromissoAsyncTask = new RegraCompromissoAsyncTask(AddCompromissoActivity.this);
+        addCompromissoAsyncTask.execute(ConstantesAgenda.LIST);
 
+        progress("Buscando dados para Edição...");
     }
 
     private void init() {
@@ -118,19 +115,60 @@ public class AddCompromissoActivity extends AppCompatActivity implements Interfa
 
         List<Object> results = (List<Object>) result;
         Integer option = (Integer) results.get(0);
-
+        boolean isRetornoAsyncTask = false;
         switch (option) {
             case ConstantesAgenda.ADD:
+                isRetornoAsyncTask = (boolean) results.get(1);
+                if (isRetornoAsyncTask) {
+                    if (Principal.IS_ERRO) {
+                        Toast.makeText(getApplicationContext(), "Erro no insert das informações, tente salvar novamente.", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(getApplicationContext(), "Dados inseridos com sucesso.", Toast.LENGTH_SHORT).show();
+                        finish();
+                    }
+                }
                 progressDialog.dismiss();
-                Toast.makeText(getApplicationContext(), "Dados inseridos com sucesso.", Toast.LENGTH_SHORT).show();
-                finish();
                 break;
             case ConstantesAgenda.UPDATE:
+                isRetornoAsyncTask = (boolean) results.get(1);
+                if (isRetornoAsyncTask) {
+                    if (Principal.IS_ERRO) {
+                        Toast.makeText(getApplicationContext(), "Erro no update tente salvar novamente.", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(getApplicationContext(), "Update realizado com sucesso.", Toast.LENGTH_SHORT).show();
+                        finish();
+                    }
+                }
+                Principal.IS_ERRO = false;
                 progressDialog.dismiss();
-                Toast.makeText(getApplicationContext(), "Update realizado com sucesso.", Toast.LENGTH_SHORT).show();
-                finish();
                 break;
             case ConstantesAgenda.REMOVE:
+                isRetornoAsyncTask = (boolean) results.get(1);
+                if (isRetornoAsyncTask) {
+                    if (Principal.IS_ERRO) {
+                        Toast.makeText(getApplicationContext(), "Erro ao remover item, tente salvar novamente.", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(getApplicationContext(), "Item removido com sucesso.", Toast.LENGTH_SHORT).show();
+                        finish();
+                    }
+                }
+                Principal.IS_ERRO = false;
+                progressDialog.dismiss();
+                break;
+            case ConstantesAgenda.LIST:
+                List<br.poc.agenda.backend.acompanhamentoEndpoint.model.Compromisso> compromisso = (List<br.poc.agenda.backend.acompanhamentoEndpoint.model.Compromisso>) results.get(1);
+                if (compromisso != null && !compromisso.isEmpty()) {
+                    for (br.poc.agenda.backend.acompanhamentoEndpoint.model.Compromisso model : compromisso) {
+                        if (model.getId().toString().equals(compromissoId)) {
+                            titulo.setText(model.getTitulo());
+                            data.setText(model.getData().split(" ")[0]);
+                            hora.setText(model.getData().split(" ")[1]);
+                            descricao.setText(model.getDescricao());
+                            modelCompro = model;
+                        }
+                    }
+                }
+                progressDialog.dismiss();
                 break;
         }
     }
@@ -141,10 +179,11 @@ public class AddCompromissoActivity extends AppCompatActivity implements Interfa
             case R.id.id_salvar:
                 if (obrigatorio()) {
                     if(validahora()) {
-                        progress();
+                        progress("Inserindo dados...");
                         if (isEdicao) {
-                            persisteEdicaoAgenda(compromissoModel);
+                            persisteEdicaoAgenda(modelCompro);
                             alarme();
+                            isEdicao = false;
                         } else {
                             persistirDadosAgenda();
                             alarme();
@@ -229,33 +268,26 @@ public class AddCompromissoActivity extends AppCompatActivity implements Interfa
         int minutos = 5;
 
         Calendar calendar = Calendar.getInstance();
-
-        calendar.set(Calendar.MONTH, getDataHora(mes));
         calendar.set(Calendar.YEAR, getDataHora(ano));
+        calendar.set(Calendar.MONTH, getDataHora(mes));
         calendar.set(Calendar.DAY_OF_MONTH, getDataHora(dia));
 
         calendar.set(Calendar.HOUR_OF_DAY, getDataHora(hora));
         calendar.set(Calendar.MINUTE, getDataHora(minutos));
         calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
 
-        Date date = calendar.getTime();
-        date.getTime();
         long horaDatePicker = calendar.getTimeInMillis();
         long horaAtual      = AndroidUtil.horaAtualMillis();
 
         Intent alarmIntent = new Intent(AddCompromissoActivity.this, ReceiverAlarme.class);
         alarmIntent.putExtra(ConstantesAgenda.TEXT_TITULO_NOTIFICATION, titulo.getText().toString());
-        Log.i(Principal.TAG, "Texto Titulo " + titulo.getText().toString());
 
         PendingIntent pendingIntent = PendingIntent.getBroadcast(AddCompromissoActivity.this, 0, alarmIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-        Log.i(Principal.TAG, "Millesimo Date Picker " + String.valueOf(horaDatePicker));
-        Log.i(Principal.TAG, "Millesimo Data Atual " + String.valueOf(horaAtual));
-
         AlarmManager manager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-        manager.setInexactRepeating(AlarmManager.RTC_WAKEUP, horaAtual, horaDatePicker - horaAtual , pendingIntent);
-
-        Log.i(Principal.TAG, "Calculo Millesimo " + String.valueOf(horaDatePicker - horaAtual));
+        long different = horaDatePicker - horaAtual;
+        manager.setRepeating(AlarmManager.RTC_WAKEUP, horaAtual, 1000 * 60 * 20, pendingIntent);
 
     }
 
@@ -283,9 +315,16 @@ public class AddCompromissoActivity extends AppCompatActivity implements Interfa
         return retorno;
     }
 
-    private void persisteEdicaoAgenda(Compromisso compromisso) {
+    private void persisteEdicaoAgenda(br.poc.agenda.backend.acompanhamentoEndpoint.model.Compromisso compromisso) {
+        setTextUpdate(compromisso);
         addCompromissoAsyncTask = new RegraCompromissoAsyncTask(AddCompromissoActivity.this);
         addCompromissoAsyncTask.execute(ConstantesAgenda.UPDATE, compromisso);
+    }
+
+    private void setTextUpdate(br.poc.agenda.backend.acompanhamentoEndpoint.model.Compromisso compromisso) {
+        compromisso.setTitulo(titulo.getText().toString());
+        compromisso.setData(retornaDataHora());
+        compromisso.setDescricao(descricao.getText().toString());
     }
 
     private void asynTask() {
@@ -294,15 +333,15 @@ public class AddCompromissoActivity extends AppCompatActivity implements Interfa
     }
 
     private boolean obrigatorio() {
-        return !(titulo.getText().toString().equals("")
-                && descricao.getText().toString().equals("")
-                && data.getText().toString().equals("")
-                && hora.getText().toString().equals(""));
+        return !titulo.getText().toString().equals("")
+                && !descricao.getText().toString().equals("")
+                && !data.getText().toString().equals("")
+                && !hora.getText().toString().equals("");
     }
 
-    private void progress() {
+    private void progress(String descricao) {
         progressDialog = new ProgressDialog(this);
-        progressDialog.setMessage("Inserindo dados...");
+        progressDialog.setMessage(descricao);
         progressDialog.setCanceledOnTouchOutside(true);
         progressDialog.show();
     }
