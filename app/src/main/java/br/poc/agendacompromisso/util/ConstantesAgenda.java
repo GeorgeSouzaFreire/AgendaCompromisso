@@ -19,5 +19,6 @@ public class ConstantesAgenda {
 
     // Constantes
     public static final String TEXT_TITULO_NOTIFICATION = "text_notification";
-
+    public static final String TEXT_DATA_NOTIFICATION = "text_data_notification";
+    public static final String TEXT_DESCRICAO_NOTIFICATION = "text_descricao_notification";
 }
